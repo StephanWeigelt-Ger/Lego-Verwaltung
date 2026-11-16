@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline nutzbar.
 // Eigene Dateien: zuerst aus dem Netz (damit Updates sofort ankommen), sonst aus dem Cache.
-const CACHE = 'lego-v7';
+const CACHE = 'lego-v8';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/data.js', 'js/dropbox.js', 'js/photo.js', 'js/research.js', 'js/importer.js', 'js/config.js',

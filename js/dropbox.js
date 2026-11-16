@@ -66,6 +66,42 @@ export async function finishLoginIfNeeded() {
   return true;
 }
 
+// Anmeldung ohne Weiterleitung: Dropbox zeigt nach "Zulassen" einen Code an, der in der App
+// eingefügt wird. Dafür muss in der Dropbox-App keine Weiterleitungs-Adresse hinterlegt sein.
+export async function startCodeLogin(appKey) {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  await kv.set('dbx_code_pkce', { verifier, appKey });
+  const p = new URLSearchParams({
+    client_id: appKey,
+    response_type: 'code',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    token_access_type: 'offline',
+  });
+  return `${AUTH_URL}?${p}`;
+}
+
+export async function finishCodeLogin(code) {
+  const saved = await kv.get('dbx_code_pkce');
+  if (!saved) throw new Error('Bitte zuerst auf „Mit Dropbox verbinden“ tippen.');
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    body: new URLSearchParams({ code: code.trim(), grant_type: 'authorization_code', code_verifier: saved.verifier, client_id: saved.appKey }),
+  });
+  if (!res.ok) throw new Error('Code wurde nicht angenommen. Bitte erneut verbinden und den neuen Code einfügen.');
+  const t = await res.json();
+  await kv.set('dbx_auth', {
+    appKey: saved.appKey,
+    refreshToken: t.refresh_token,
+    accessToken: t.access_token,
+    expiresAt: Date.now() + (t.expires_in - 60) * 1000,
+    accountId: t.account_id,
+  });
+  await kv.del('dbx_code_pkce');
+  return true;
+}
+
 export async function isConnected() {
   const a = await kv.get('dbx_auth');
   return !!(a && a.refreshToken);
