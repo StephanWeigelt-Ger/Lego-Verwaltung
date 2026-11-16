@@ -75,8 +75,9 @@ function renderList() {
     <div class="stats">
       <div class="stat"><b>${owned.length}</b><span>Sets</span></div>
       <div class="stat"><b>${copies}</b><span>Exemplare</span></div>
-      <div class="stat"><b>${eur(invested)}</b><span>Einkaufswert</span></div>
       <div class="stat"><b>${eur(uvpSum)}</b><span>Summe UVP</span></div>
+      <div class="stat"><b>${eur(invested)}</b><span>Summe Einkaufspreise</span></div>
+      ${uvpSum && invested ? `<div class="stat"><b>${eur(Math.abs(uvpSum - invested))}</b><span>${uvpSum >= invested ? 'unter UVP gekauft' : 'über UVP gekauft'}${uvpSum ? ' (' + Math.round(Math.abs(1 - invested / uvpSum) * 100) + ' %)' : ''}</span></div>` : ''}
       ${market ? `<div class="stat"><b>${eur(market)}</b><span>Marktwert (geschätzt)</span></div>` : ''}
     </div>
     <div class="toolbar">
