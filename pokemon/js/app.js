@@ -335,6 +335,7 @@ function renderItem(id) {
         <div class="row" style="margin-top:12px">
           <button class="btn small" id="doResearch">🔎 ${card ? 'Daten & Marktwert aktualisieren' : 'Daten recherchieren'}</button>
           <a class="btn small" href="${research.cardmarketUrl(s)}" target="_blank" rel="noopener">Cardmarket ↗</a>
+          ${!card ? `<a class="btn small" href="https://www.google.de/search?q=${encodeURIComponent('UVP ' + title(s) + ' ' + (s.setName || '') + ' Pokémon ' + (s.language || ''))}" target="_blank" rel="noopener">UVP suchen ↗</a>` : ''}
         </div>
         ${r ? `<p class="muted small">Letzte Recherche: ${new Date(r.at).toLocaleString('de-DE')} (${esc(r.source)})${r.message ? ' – ' + esc(r.message) : ''}${s.marketUpdated ? ' · Preisstand ' + dateDe(s.marketUpdated) : ''}</p>` : ''}
       </div>
@@ -639,6 +640,7 @@ async function renderSettings() {
       <p class="small">Karten, Sets, Erscheinungsdaten, Seltenheit, Bilder und Cardmarket-Marktwerte kommen aus der freien Datenbank <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a>. Kartenkatalog: ${sets.length ? sets.length + ' Sets geladen' : '⚠️ noch nicht erstellt'}.</p>
       <div class="row"><button class="btn" id="resMissing" ${missing.length ? '' : 'disabled'}>Fehlende Daten recherchieren (${missing.length})</button>
         <button class="btn" id="resPrices" ${cards.length ? '' : 'disabled'}>Marktwerte aller Karten aktualisieren (${cards.length})</button></div>
+      <p class="muted small">Automatisch: beim Anlegen sofort und danach jeden Montag ab 00:01 Uhr (deutsche Zeit), sobald die App geöffnet ist. Letzte wöchentliche Aktualisierung: ${esc(data.getSettings().weeklyUpdate || '–')}</p>
       <p class="small" id="resProgress"></p>
     </div>
 
@@ -727,6 +729,47 @@ async function startImport(file) {
   draw(wb.SheetNames[0]);
 }
 
+// ---------- Wöchentliche Aktualisierung (Montag 00:01 Uhr deutsche Zeit) ----------
+// Beim ersten Öffnen der App nach Montag 00:01 Uhr (Europe/Berlin) werden die Marktwerte aller Karten
+// und die Daten unvollständiger Einträge neu recherchiert. Der Zeitpunkt wird über Dropbox geteilt,
+// damit nur ein Gerät die Aktualisierung macht.
+function berlinNow() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' }).replace('T', ' ').slice(0, 16); // "JJJJ-MM-TT HH:MM"
+}
+function lastMondayBerlin() {
+  const now = berlinNow();
+  const d = new Date(now.slice(0, 10) + 'T12:00:00Z');
+  const back = (d.getUTCDay() + 6) % 7; // Tage seit Montag
+  d.setUTCDate(d.getUTCDate() - back);
+  let monday = d.toISOString().slice(0, 10) + ' 00:01';
+  if (monday > now) { d.setUTCDate(d.getUTCDate() - 7); monday = d.toISOString().slice(0, 10) + ' 00:01'; }
+  return monday;
+}
+let weeklyRunning = false;
+async function weeklyUpdate(force = false) {
+  if (weeklyRunning || !navigator.onLine) return;
+  const due = lastMondayBerlin();
+  const last = data.getSettings().weeklyUpdate || '';
+  if (!force && last >= due) return;
+  const todo = data.all().filter((s) => (isCard(s) && (s.tcgdexId || (s.setName && s.number))) || s.research?.status !== 'ok');
+  weeklyRunning = true;
+  await data.saveSettings({ weeklyUpdate: berlinNow() });
+  const bar = $('#weeklyBar');
+  let failed = 0;
+  for (let i = 0; i < todo.length; i++) {
+    bar.hidden = false;
+    bar.textContent = `Wöchentliche Aktualisierung der Marktwerte: ${i + 1} von ${todo.length} …`;
+    const s = data.get(todo[i].id);
+    if (!s) continue;
+    try { await research.enrich(s); await data.save(s); } catch { failed++; }
+    if (/nicht erreichbar/.test(s.research?.message || '')) failed++;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  bar.hidden = true;
+  weeklyRunning = false;
+  if (todo.length) toast(failed ? `Aktualisierung fertig, ${failed} Einträge konnten nicht abgerufen werden.` : 'Marktwerte aktualisiert.', 4000);
+}
+
 // ---------- Sync-Anzeige & Routing ----------
 async function updateSyncUi() {
   const bar = $('#syncBar');
@@ -774,7 +817,10 @@ async function init() {
   };
   route();
   updateSyncUi();
-  data.sync();
+  await data.sync();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  weeklyUpdate();
+  setInterval(() => weeklyUpdate(), 15 * 60 * 1000); // App bleibt offen: jede Viertelstunde prüfen
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(() => weeklyUpdate(), 3000); });
 }
 init();

@@ -1,6 +1,6 @@
 // Service Worker des Pokémon-Collectors: macht die App offline nutzbar.
 // Eigene Dateien: zuerst aus dem Netz (damit Updates sofort ankommen), sonst aus dem Cache.
-const CACHE = 'pokemon-v1';
+const CACHE = 'pokemon-v2';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', '../css/app.css',
   'js/app.js', 'js/store.js', 'js/data.js', 'js/dropbox.js', 'js/research.js', 'js/importer.js',
