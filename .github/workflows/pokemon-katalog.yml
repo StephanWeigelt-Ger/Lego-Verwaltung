@@ -3,6 +3,7 @@ name: Pokémon-Katalog aktualisieren
 # Lädt wöchentlich alle Pokémon-TCG-Sets und -Karten (Deutsch und Englisch) von TCGdex
 # und speichert sie als pokemon/data/katalog.json. Die Pokémon-App sucht damit Karten,
 # Sets und Erscheinungsdaten ohne Schlüssel, auch offline und beim Excel-Import.
+# Dazu alle versiegelten Produkte mit Cardmarket-Marktwert (pokemon/data/produkte.json).
 on:
   schedule:
     # Sonntag 23:01 UTC = Montag 00:01 Uhr Winterzeit (Sommerzeit: 01:01 Uhr)
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'tools/build_pokemon_catalog.py'
+      - 'tools/build_pokemon_products.py'
       - '.github/workflows/pokemon-katalog.yml'
 
 permissions:
@@ -23,10 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Katalog von TCGdex laden
+        continue-on-error: true
         run: python3 tools/build_pokemon_catalog.py pokemon/data/katalog.json
+      - name: Versiegelte Produkte und Preise von Cardmarket laden
+        run: python3 tools/build_pokemon_products.py pokemon/data/produkte.json
       - name: Änderungen speichern
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add pokemon/data/katalog.json
+          git add $(ls pokemon/data/katalog.json pokemon/data/produkte.json 2>/dev/null)
           git diff --cached --quiet || (git commit -m "Pokémon-Katalog aktualisiert" && git pull --rebase && git push)

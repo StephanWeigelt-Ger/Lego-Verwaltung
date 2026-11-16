@@ -25,3 +25,8 @@
 
 /* Filter in der Übersicht: auf dem Handy zwei nebeneinander */
 @media (max-width: 600px) { .container > .row select { flex: 1 1 140px; max-width: none !important; } }
+
+.cmHits { display: grid; gap: 6px; margin-top: 8px; max-height: 320px; overflow: auto; }
+.cm-hit { text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; color: var(--text); cursor: pointer; }
+.cm-hit span { display: block; font-size: 12px; color: var(--muted); }
+.cm-hit.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }

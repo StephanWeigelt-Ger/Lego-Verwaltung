@@ -214,6 +214,15 @@ export async function enrich(item, { overwrite = false } = {}) {
     } else notes.push('Set und Kartennummer angeben, um die Karte zu finden');
     if (!item.pokemon && item.name) item.pokemon = pokemonFromName(item.name, item.category);
   } else {
+    if (item.cmId) {
+      const p = await lookupProduct(item.cmId);
+      if (p) {
+        sources.push('Cardmarket');
+        const v = p.trend ?? p.avg30 ?? null;
+        if (v != null) { item.marketValue = v; item.marketUpdated = (p.stand || '').slice(0, 10); }
+        else notes.push('kein Cardmarket-Preis');
+      }
+    } else notes.push('kein Cardmarket-Produkt verknüpft');
     if (item.setName) {
       const r = await lookupProductSet(item.setName);
       if (r) { apply(r, ['setId', 'serie', 'releaseDate', 'year'], overwrite); sources.push('Katalog'); }
@@ -222,7 +231,7 @@ export async function enrich(item, { overwrite = false } = {}) {
     if (!item.uvp) notes.push('UVP bitte von Hand eintragen');
   }
   if (!item.year) notes.push('Erscheinungsjahr nicht gefunden');
-  const complete = item.kind === 'karte' ? !!(item.year && item.name && item.setName) : !!(item.year && item.uvp);
+  const complete = item.kind === 'karte' ? !!(item.year && item.name && item.setName) : !!(item.year && item.uvp && item.cmId);
   item.research = {
     status: !sources.length ? 'notfound' : complete ? 'ok' : 'partial',
     source: sources.join(' + ') || '–',
@@ -232,7 +241,58 @@ export async function enrich(item, { overwrite = false } = {}) {
   return item;
 }
 
+// ---------- Versiegelte Produkte: Cardmarket-Produktliste mit Marktwert ----------
+// data/produkte.json wird wöchentlich aus den frei herunterladbaren Cardmarket-Daten erzeugt.
+let productsPromise = null;
+export function products() {
+  if (!productsPromise) {
+    productsPromise = fetch('data/produkte.json', { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : { produkte: [] }))
+      .catch(() => ({ produkte: [] }));
+    productsPromise.then((c) => { if (!(c.produkte || []).length) productsPromise = null; });
+  }
+  return productsPromise;
+}
+export function resetProducts() { productsPromise = null; }
+
+// Deutsche Begriffe in die (englischen) Cardmarket-Produktnamen übersetzen
+const DE_EN = [[/top[\s-]*trainer[\s-]*box|ttb/g, 'elite trainer box'], [/display|booster[\s-]*display/g, 'booster box'], [/sammelkoffer/g, 'collector chest'],
+  [/kollektion/g, 'collection'], [/premium[\s-]*kollektion/g, 'premium collection'], [/themendeck|starterdeck/g, 'theme deck'], [/booster[\s-]*bundle/g, 'booster bundle'],
+  [/karmesin\s*(&|und)?\s*purpur/g, 'scarlet violet'], [/schwert\s*(&|und)?\s*schild/g, 'sword shield'], [/sonne\s*(&|und)?\s*mond/g, 'sun moon']];
+
+function productRow(r, stand) {
+  const [id, name, type, exp, trend, avg30, low] = r;
+  return { id, name, type, exp, trend, avg30, low, stand };
+}
+
+export async function searchProducts(query, limit = 40) {
+  const c = await products();
+  let q = String(query || '').toLowerCase();
+  for (const [re, en] of DE_EN) q = q.replace(re, en);
+  // deutsche Setnamen durch englische ersetzen (z. B. "Flammende Finsternis" -> "Darkness Ablaze")
+  const cat = await catalog();
+  for (const s of Object.values(cat.sets || {})) {
+    if (s[0] && s[1] && s[0].length > 3 && q.includes(s[0].toLowerCase())) q = q.replace(s[0].toLowerCase(), s[1].toLowerCase());
+  }
+  const words = norm(q).split(' ').filter((w) => w && !['pokemon', 'und'].includes(w));
+  if (!words.length) return [];
+  const hits = [];
+  for (const r of c.produkte || []) {
+    const n = norm(r[1] + ' ' + r[2]);
+    if (words.every((w) => n.includes(w))) hits.push(productRow(r, c.stand));
+  }
+  hits.sort((a, b) => b.id - a.id); // neueste zuerst
+  return hits.slice(0, limit);
+}
+
+export async function lookupProduct(id) {
+  const c = await products();
+  const r = (c.produkte || []).find((x) => x[0] === Number(id));
+  return r ? productRow(r, c.stand) : null;
+}
+
 export function cardmarketUrl(item) {
+  if (item.cmName) return 'https://www.cardmarket.com/de/Pokemon/Products/Search?searchString=' + encodeURIComponent(item.cmName);
   const q = item.kind === 'karte' ? [item.name, item.setName, item.number].filter(Boolean).join(' ') : [item.name || item.productType, item.setName].filter(Boolean).join(' ');
   return 'https://www.cardmarket.com/de/Pokemon/Products/Search?searchString=' + encodeURIComponent(q);
 }

@@ -76,6 +76,8 @@ export function newSet(fields = {}) {
     // Produkt
     productType: '',   // Display, Top-Trainer-Box, Booster, Blister, Tin, Kollektion …
     ean: '',
+    cmId: null,        // Cardmarket-Produkt-ID (für den Marktwert)
+    cmName: '',        // Name des Produkts bei Cardmarket
     // gemeinsam
     releaseDate: '',   // Erscheinungsdatum JJJJ-MM-TT
     year: null,        // Erscheinungsjahr
