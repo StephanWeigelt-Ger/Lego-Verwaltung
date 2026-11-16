@@ -244,10 +244,9 @@ async function renderNew() {
         <label class="field"><span>UVP Deutschland (€, falls bekannt)</span><input id="pUvp" type="number" step="0.01" inputmode="decimal"></label>
       </div>
       <datalist id="setList">${allSetNames(sets).map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
-      <div id="cmBox" style="margin-top:12px"></div>
       <label class="check"><input type="checkbox" id="nWish"> Nur auf die Wunschliste (noch nicht gekauft)</label>
       <div class="row" style="margin-top:10px"><button class="btn primary" id="pCreate">Anlegen</button><a class="btn" href="#/">Abbrechen</a></div>
-      <p class="muted small">Das Erscheinungsdatum wird über das Set ergänzt. Eine UVP gibt es für Pokémon-Produkte in keiner freien Datenbank; bitte von Hand eintragen.</p>
+      <p class="muted small">Erscheinungsdatum und Cardmarket-Marktwert werden automatisch ergänzt; das passende Cardmarket-Produkt sucht die App selbst. Eine UVP gibt es für Pokémon-Produkte in keiner freien Datenbank; bitte von Hand eintragen.</p>
     </div>`}`;
 
   $$('#kindSeg button').forEach((b) => (b.onclick = () => { newUi.kind = b.dataset.k; renderNew(); }));
@@ -282,12 +281,7 @@ async function renderNew() {
         setTotal: numOrNull($('#mTotal').value), releaseDate, year: releaseDate ? Number(releaseDate.slice(0, 4)) : null });
     };
   } else {
-    let picked = null;
-    const picker = cmPicker($('#cmBox'), '', (h) => { picked = h; });
-    const suggest = () => {
-      if (!$('#pName').value) $('#pName').placeholder = $('#pType').value + ($('#pSet').value ? ' ' + $('#pSet').value : '');
-      picker.setQuery([$('#pSet').value, $('#pType').value.replace(/\s*\(.*\)/, '')].filter(Boolean).join(' '));
-    };
+    const suggest = () => { if (!$('#pName').value) $('#pName').placeholder = $('#pType').value + ($('#pSet').value ? ' ' + $('#pSet').value : ''); };
     $('#pType').onchange = suggest;
     $('#pSet').addEventListener('change', suggest);
     $('#pCreate').onclick = async () => {
@@ -295,8 +289,7 @@ async function renderNew() {
       const name = $('#pName').value.trim() || [productType, setName].filter(Boolean).join(' ');
       if (!name) return toast('Bitte Produktart oder Name angeben.');
       newUi.language = $('#pLang').value;
-      const item = newSet({ kind: 'produkt', name, productType, setName, language: newUi.language, uvp: numOrNull($('#pUvp').value), wishlist: $('#nWish').checked,
-        cmId: picked?.id || null, cmName: picked?.name || '' });
+      const item = newSet({ kind: 'produkt', name, productType, setName, language: newUi.language, uvp: numOrNull($('#pUvp').value), wishlist: $('#nWish').checked });
       if (!item.wishlist) item.copies.push(newCopy({ purchaseDate: today(), state: 'versiegelt' }));
       await data.save(item);
       location.hash = '#/item/' + item.id;
@@ -399,7 +392,7 @@ function renderItem(id) {
       ${field('Marktwert aktuell (€)', 'marketValue', s.marketValue, 'number', 'step="0.01" inputmode="decimal"')}
       <label class="check"><input type="checkbox" data-f="wishlist" ${s.wishlist ? 'checked' : ''}> Wunschliste</label>
     </div>
-    ${!card ? `<div style="margin-top:12px"><p class="small">${s.cmId ? `Cardmarket-Produkt: <b>${esc(s.cmName)}</b> <button class="btn small" id="cmChange">ändern</button>` : '⚠️ Noch kein Cardmarket-Produkt verknüpft, daher kein automatischer Marktwert. <button class="btn small" id="cmChange">jetzt verknüpfen</button>'}</p><div id="cmBox"></div></div>` : ''}
+    ${!card ? `<div style="margin-top:12px"><p class="small">${s.cmId ? `Cardmarket-Produkt${s.cmAuto ? ' (automatisch gefunden)' : ''}: <b>${esc(s.cmName)}</b> <button class="btn small" id="cmChange">falsch? ändern</button>` : '⚠️ Kein passendes Cardmarket-Produkt gefunden. <button class="btn small" id="cmChange">selbst auswählen</button>'}</p><div id="cmBox"></div></div>` : ''}
     <label class="field" style="margin-top:12px"><span>Notizen</span><textarea data-f="notes">${esc(s.notes)}</textarea></label>
     <datalist id="setList"></datalist>
     <datalist id="pkList">${[...new Set(data.all().map((x) => x.pokemon).filter(Boolean))].sort().map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
@@ -435,7 +428,9 @@ function renderItem(id) {
       if (idChanged && f !== 'language') { s.tcgdexId = ''; s.setId = f === 'setName' ? '' : s.setId; }
       await data.save(s);
       if (idChanged && s.number && (s.setName || s.setId)) { autoResearch(id, f !== 'language'); return; }
-      if (!card && f === 'setName' && v) { autoResearch(id, true); return; }
+      if (!card && ['setName', 'productType', 'name'].includes(f) && (s.cmAuto || !s.cmId)) {
+        s.cmId = null; s.cmName = ''; await data.save(s); autoResearch(id, f === 'setName'); return;
+      }
       if (['name', 'pokemon', 'setName', 'number', 'language', 'wishlist', 'uvp', 'year', 'releaseDate', 'marketValue', 'productType', 'rarity'].includes(f)) renderItem(id);
     });
   });
@@ -482,7 +477,7 @@ function renderItem(id) {
   };
   if ($('#cmChange')) $('#cmChange').onclick = () => {
     cmPicker($('#cmBox'), [s.setName, (s.productType || '').replace(/\s*\(.*\)/, '')].filter(Boolean).join(' '), async (h) => {
-      s.cmId = h.id; s.cmName = h.name;
+      s.cmId = h.id; s.cmName = h.name; s.cmAuto = false;
       await data.save(s);
       autoResearch(id);
     });

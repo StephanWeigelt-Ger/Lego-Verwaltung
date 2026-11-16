@@ -78,6 +78,7 @@ export function newSet(fields = {}) {
     ean: '',
     cmId: null,        // Cardmarket-Produkt-ID (für den Marktwert)
     cmName: '',        // Name des Produkts bei Cardmarket
+    cmAuto: false,     // automatisch verknüpft (wird bei Änderungen neu gesucht)
     // gemeinsam
     releaseDate: '',   // Erscheinungsdatum JJJJ-MM-TT
     year: null,        // Erscheinungsjahr

@@ -214,6 +214,10 @@ export async function enrich(item, { overwrite = false } = {}) {
     } else notes.push('Set und Kartennummer angeben, um die Karte zu finden');
     if (!item.pokemon && item.name) item.pokemon = pokemonFromName(item.name, item.category);
   } else {
+    if (!item.cmId) {
+      const m = await autoMatchProduct(item);
+      if (m) { item.cmId = m.id; item.cmName = m.name; item.cmAuto = true; }
+    }
     if (item.cmId) {
       const p = await lookupProduct(item.cmId);
       if (p) {
@@ -222,7 +226,7 @@ export async function enrich(item, { overwrite = false } = {}) {
         if (v != null) { item.marketValue = v; item.marketUpdated = (p.stand || '').slice(0, 10); }
         else notes.push('kein Cardmarket-Preis');
       }
-    } else notes.push('kein Cardmarket-Produkt verknüpft');
+    } else notes.push('kein passendes Cardmarket-Produkt gefunden');
     if (item.setName) {
       const r = await lookupProductSet(item.setName);
       if (r) { apply(r, ['setId', 'serie', 'releaseDate', 'year'], overwrite); sources.push('Katalog'); }
@@ -283,6 +287,66 @@ export async function searchProducts(query, limit = 40) {
   }
   hits.sort((a, b) => b.id - a.id); // neueste zuerst
   return hits.slice(0, limit);
+}
+
+// Deutsche -> englische Pokémon-Namen aus dem Katalog (gleiche Karten-ID in beiden Sprachen)
+let pkMap = null;
+async function pokemonMap() {
+  if (pkMap) return pkMap;
+  const c = await catalog();
+  const en = new Map((c.cards?.en || []).map((x) => [x[0], x[2]]));
+  pkMap = new Map();
+  for (const [id, , nameDe] of c.cards?.de || []) {
+    const nameEn = en.get(id);
+    if (!nameEn) continue;
+    const de = norm(pokemonFromName(nameDe)), e = norm(pokemonFromName(nameEn));
+    if (de && e && de.length > 2 && !pkMap.has(de)) pkMap.set(de, e);
+  }
+  return pkMap;
+}
+
+// Englische Bezeichnung je Produktart, wie sie bei Cardmarket im Namen steht
+const TYPE_EN = {
+  'Display (Booster-Box)': ['booster box', 'Display'], 'Top-Trainer-Box (ETB)': ['elite trainer box', 'Top-Trainer-Box'],
+  Booster: ['booster', 'Booster'], 'Sleeved Booster': ['sleeved booster', 'Booster'], 'Booster-Bundle': ['booster bundle', 'Display'],
+  'Build & Battle Box': ['build battle box', 'Box / Kollektion'], Blister: ['blister', 'Blister'], Tin: ['tin', 'Tin'], 'Mini-Tin': ['mini tin', 'Tin'],
+  Kollektion: ['collection', 'Box / Kollektion'], 'Premium-Kollektion': ['premium collection', 'Box / Kollektion'],
+  'Ultra-Premium-Kollektion': ['ultra premium collection', 'Box / Kollektion'], 'Themendeck / Starterdeck': ['theme deck', 'Themendeck'],
+  Sammelkoffer: ['collector chest', 'Tin'],
+};
+const PENALTY = ['pokemon center', 'case', 'costco', 'sam s club', '6 cards', '3 cards', 'fun pack', 'version', 'coin', 'promos', 'bundle display', 'mini tin display', 'build battle box display', 'jumbo'];
+
+// Passendes Cardmarket-Produkt automatisch finden (Set + Produktart + ggf. Pokémon im Namen)
+export async function autoMatchProduct(item) {
+  const c = await products();
+  if (!(c.produkte || []).length) return null;
+  const set = item.setName ? await findSet(item.setName) : null;
+  const setEn = norm(set?.nameEn || set?.nameDe || item.setName || '');
+  const [typeEn, typeCat] = TYPE_EN[item.productType] || ['', ''];
+  // Zusatzwörter aus dem eigenen Namen (z. B. Pokémon "Glurak" -> "charizard")
+  const map = await pokemonMap();
+  let extra = norm(item.name);
+  for (const w of [setEn, norm(item.setName), norm(item.productType)]) if (w) extra = extra.replace(w, ' ');
+  let q = extra;
+  for (const [re, en] of DE_EN) q = q.replace(re, en);
+  const extraWords = norm(q).split(' ').filter((w) => w.length > 2 && !['box', 'pokemon', 'und', 'mit', 'der', 'die', 'das', 'top', 'trainer', 'display', 'booster', 'tin', 'blister'].includes(w))
+    .map((w) => map.get(w) || w);
+  if (!setEn && !extraWords.length) return null;
+  const want = norm(`${setEn} ${typeEn}`);
+  let best = null, bestScore = 0;
+  for (const r of c.produkte) {
+    const n = norm(r[1]);
+    if (setEn && !(' ' + n + ' ').includes(' ' + setEn + ' ')) continue;
+    if (typeCat && r[2] !== typeCat) continue;
+    if (typeEn && !typeEn.split(' ').every((w) => n.includes(w))) continue;
+    let score = 50;
+    if (n === want || n === 'pokemon card ' + want) score = 100;
+    for (const p of PENALTY) if (n.includes(p) && !want.includes(p) && !extraWords.some((w) => p.includes(w))) score -= 25;
+    for (const w of extraWords) score += n.includes(w) ? 15 : -5;
+    score -= Math.max(0, n.split(' ').length - want.split(' ').length - extraWords.length) * 2;
+    if (score > bestScore || (score === bestScore && best && r[0] > best[0])) { bestScore = score; best = r; }
+  }
+  return best && bestScore >= 30 ? productRow(best, c.stand) : null;
 }
 
 export async function lookupProduct(id) {
