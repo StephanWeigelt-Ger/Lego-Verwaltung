@@ -479,7 +479,7 @@ async function renderSettings() {
 
     <h2>Dropbox (Speicher & Abgleich zwischen Geräten)</h2>
     <div class="card">
-      ${connected ? `<p>✅ Mit Dropbox verbunden. Daten liegen im Ordner <b>Apps › Lego Verwaltung</b>.</p>
+      ${connected ? `<p>✅ Mit Dropbox verbunden. Daten liegen in deiner Dropbox im Ordner <b>Apps</b> › (Name deiner Dropbox-App).</p>
         <p class="muted small">Letzter Abgleich: ${data.state.lastSync ? new Date(data.state.lastSync).toLocaleString('de-DE') : '–'}</p>
         <div class="row"><button class="btn" id="syncNow">Jetzt abgleichen</button><button class="btn danger" id="dbxOff">Trennen</button></div>`
       : `<p>Ohne Dropbox werden die Daten nur auf diesem Gerät gespeichert.</p>
