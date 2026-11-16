@@ -173,6 +173,30 @@ function allSetNames(sets) {
   return [...new Set([...own, ...sets.map((x) => x.nameDe || x.nameEn)])].sort((a, b) => a.localeCompare(b, 'de'));
 }
 
+// Cardmarket-Produkt auswählen (für Marktwert versiegelter Produkte)
+function cmPicker(box, query, onPick) {
+  box.innerHTML = `<label class="field"><span>Cardmarket-Produkt suchen (für den Marktwert)</span>
+    <input class="cmQ" value="${esc(query)}" placeholder="z. B. 151 Top-Trainer-Box"></label><div class="cmHits"></div>`;
+  const inp = $('.cmQ', box), list = $('.cmHits', box);
+  let t;
+  const run = () => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const hits = inp.value.trim().length >= 2 ? await research.searchProducts(inp.value) : [];
+      list.innerHTML = hits.length ? hits.map((h) => `<button class="cm-hit" data-id="${h.id}"><b>${esc(h.name)}</b>
+          <span>${esc(h.type)}${h.trend != null ? ' · Marktwert ' + eur(h.trend) : ''}</span></button>`).join('')
+        : inp.value.trim().length >= 2 ? '<p class="muted small">Kein Produkt gefunden. Tipp: englische Begriffe probieren, z. B. „Elite Trainer Box“, „Booster Box“, „Collection“.</p>' : '';
+      $$('.cm-hit', list).forEach((b) => (b.onclick = () => {
+        $$('.cm-hit', list).forEach((x) => x.classList.toggle('on', x === b));
+        onPick(hits.find((h) => String(h.id) === b.dataset.id));
+      }));
+    }, 250);
+  };
+  inp.addEventListener('input', () => { inp.dataset.touched = '1'; run(); });
+  run();
+  return { setQuery: (q) => { if (!inp.dataset.touched) { inp.value = q; run(); } } };
+}
+
 // ---------- Neu anlegen ----------
 const newUi = { kind: 'karte', language: 'Deutsch', setId: '' };
 
@@ -220,6 +244,7 @@ async function renderNew() {
         <label class="field"><span>UVP Deutschland (€, falls bekannt)</span><input id="pUvp" type="number" step="0.01" inputmode="decimal"></label>
       </div>
       <datalist id="setList">${allSetNames(sets).map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div id="cmBox" style="margin-top:12px"></div>
       <label class="check"><input type="checkbox" id="nWish"> Nur auf die Wunschliste (noch nicht gekauft)</label>
       <div class="row" style="margin-top:10px"><button class="btn primary" id="pCreate">Anlegen</button><a class="btn" href="#/">Abbrechen</a></div>
       <p class="muted small">Das Erscheinungsdatum wird über das Set ergänzt. Eine UVP gibt es für Pokémon-Produkte in keiner freien Datenbank; bitte von Hand eintragen.</p>
@@ -257,13 +282,21 @@ async function renderNew() {
         setTotal: numOrNull($('#mTotal').value), releaseDate, year: releaseDate ? Number(releaseDate.slice(0, 4)) : null });
     };
   } else {
-    $('#pType').onchange = () => { if (!$('#pName').value) $('#pName').placeholder = $('#pType').value + ($('#pSet').value ? ' ' + $('#pSet').value : ''); };
+    let picked = null;
+    const picker = cmPicker($('#cmBox'), '', (h) => { picked = h; });
+    const suggest = () => {
+      if (!$('#pName').value) $('#pName').placeholder = $('#pType').value + ($('#pSet').value ? ' ' + $('#pSet').value : '');
+      picker.setQuery([$('#pSet').value, $('#pType').value.replace(/\s*\(.*\)/, '')].filter(Boolean).join(' '));
+    };
+    $('#pType').onchange = suggest;
+    $('#pSet').addEventListener('change', suggest);
     $('#pCreate').onclick = async () => {
       const productType = $('#pType').value, setName = $('#pSet').value.trim();
       const name = $('#pName').value.trim() || [productType, setName].filter(Boolean).join(' ');
       if (!name) return toast('Bitte Produktart oder Name angeben.');
       newUi.language = $('#pLang').value;
-      const item = newSet({ kind: 'produkt', name, productType, setName, language: newUi.language, uvp: numOrNull($('#pUvp').value), wishlist: $('#nWish').checked });
+      const item = newSet({ kind: 'produkt', name, productType, setName, language: newUi.language, uvp: numOrNull($('#pUvp').value), wishlist: $('#nWish').checked,
+        cmId: picked?.id || null, cmName: picked?.name || '' });
       if (!item.wishlist) item.copies.push(newCopy({ purchaseDate: today(), state: 'versiegelt' }));
       await data.save(item);
       location.hash = '#/item/' + item.id;
@@ -366,6 +399,7 @@ function renderItem(id) {
       ${field('Marktwert aktuell (€)', 'marketValue', s.marketValue, 'number', 'step="0.01" inputmode="decimal"')}
       <label class="check"><input type="checkbox" data-f="wishlist" ${s.wishlist ? 'checked' : ''}> Wunschliste</label>
     </div>
+    ${!card ? `<div style="margin-top:12px"><p class="small">${s.cmId ? `Cardmarket-Produkt: <b>${esc(s.cmName)}</b> <button class="btn small" id="cmChange">ändern</button>` : '⚠️ Noch kein Cardmarket-Produkt verknüpft, daher kein automatischer Marktwert. <button class="btn small" id="cmChange">jetzt verknüpfen</button>'}</p><div id="cmBox"></div></div>` : ''}
     <label class="field" style="margin-top:12px"><span>Notizen</span><textarea data-f="notes">${esc(s.notes)}</textarea></label>
     <datalist id="setList"></datalist>
     <datalist id="pkList">${[...new Set(data.all().map((x) => x.pokemon).filter(Boolean))].sort().map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
@@ -445,6 +479,13 @@ function renderItem(id) {
     if (!confirm(`„${title(s)}“ mit allen Exemplaren und Fotos löschen?`)) return;
     await data.remove(s.id);
     location.hash = '#/';
+  };
+  if ($('#cmChange')) $('#cmChange').onclick = () => {
+    cmPicker($('#cmBox'), [s.setName, (s.productType || '').replace(/\s*\(.*\)/, '')].filter(Boolean).join(' '), async (h) => {
+      s.cmId = h.id; s.cmName = h.name;
+      await data.save(s);
+      autoResearch(id);
+    });
   };
   $('#doResearch').onclick = () => autoResearch(id, s.research?.status === 'ok' && confirm('Vorhandene Angaben mit den recherchierten Werten überschreiben? (Abbrechen = nur Lücken füllen und Marktwert aktualisieren)'));
   $('#camInput').onchange = (e) => handlePhotos(s, e.target.files);
@@ -751,14 +792,15 @@ async function weeklyUpdate(force = false) {
   const due = lastMondayBerlin();
   const last = data.getSettings().weeklyUpdate || '';
   if (!force && last >= due) return;
-  const todo = data.all().filter((s) => (isCard(s) && (s.tcgdexId || (s.setName && s.number))) || s.research?.status !== 'ok');
+  research.resetProducts();
+  const todo = data.all().filter((s) => (isCard(s) && (s.tcgdexId || (s.setName && s.number))) || s.cmId || s.research?.status !== 'ok');
   weeklyRunning = true;
   await data.saveSettings({ weeklyUpdate: berlinNow() });
   const bar = $('#weeklyBar');
   let failed = 0;
   for (let i = 0; i < todo.length; i++) {
     bar.hidden = false;
-    bar.textContent = `Wöchentliche Aktualisierung der Marktwerte: ${i + 1} von ${todo.length} …`;
+    bar.textContent = `Wöchentliche Aktualisierung der Marktwerte (Karten und Produkte): ${i + 1} von ${todo.length} …`;
     const s = data.get(todo[i].id);
     if (!s) continue;
     try { await research.enrich(s); await data.save(s); } catch { failed++; }
