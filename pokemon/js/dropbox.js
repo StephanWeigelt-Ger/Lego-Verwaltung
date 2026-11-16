@@ -1,0 +1,153 @@
+// Dropbox-Anbindung direkt aus dem Browser (OAuth 2 mit PKCE, ohne eigenen Server).
+// Die App nutzt einen eigenen "App-Ordner" in der Dropbox: /Apps/<App-Name>/pokemon/
+import { kv } from './store.js';
+
+const AUTH_URL = 'https://www.dropbox.com/oauth2/authorize';
+const TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
+const API = 'https://api.dropboxapi.com/2';
+const CONTENT = 'https://content.dropboxapi.com/2';
+
+export function redirectUri() {
+  return location.origin + location.pathname.replace(/index\.html$/, '');
+}
+
+function b64url(bytes) {
+  let s = '';
+  bytes.forEach((b) => (s += String.fromCharCode(b)));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function startLogin(appKey) {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
+  sessionStorage.setItem('dbx_pkce', JSON.stringify({ verifier, state, appKey }));
+  const p = new URLSearchParams({
+    client_id: appKey,
+    response_type: 'code',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    redirect_uri: redirectUri(),
+    token_access_type: 'offline',
+    state,
+  });
+  location.href = `${AUTH_URL}?${p}`;
+}
+
+// Nach der Rückleitung von Dropbox den Code gegen Tokens tauschen.
+export async function finishLoginIfNeeded() {
+  const q = new URLSearchParams(location.search);
+  const code = q.get('code');
+  if (!code && !q.get('error')) return false;
+  const saved = JSON.parse(sessionStorage.getItem('dbx_pkce') || 'null');
+  history.replaceState(null, '', redirectUri() + location.hash);
+  if (q.get('error')) throw new Error('Dropbox-Anmeldung abgebrochen.');
+  if (!saved || saved.state !== q.get('state')) throw new Error('Dropbox-Anmeldung ungültig, bitte erneut verbinden.');
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    body: new URLSearchParams({
+      code,
+      grant_type: 'authorization_code',
+      code_verifier: saved.verifier,
+      client_id: saved.appKey,
+      redirect_uri: redirectUri(),
+    }),
+  });
+  if (!res.ok) throw new Error('Dropbox-Anmeldung fehlgeschlagen: ' + (await res.text()));
+  const t = await res.json();
+  await kv.set('dbx_auth', {
+    appKey: saved.appKey,
+    refreshToken: t.refresh_token,
+    accessToken: t.access_token,
+    expiresAt: Date.now() + (t.expires_in - 60) * 1000,
+    accountId: t.account_id,
+  });
+  sessionStorage.removeItem('dbx_pkce');
+  return true;
+}
+
+export async function isConnected() {
+  const a = await kv.get('dbx_auth');
+  return !!(a && a.refreshToken);
+}
+
+export async function disconnect() {
+  const a = await kv.get('dbx_auth');
+  if (a?.accessToken) {
+    fetch(API + '/auth/token/revoke', { method: 'POST', headers: { Authorization: 'Bearer ' + a.accessToken } }).catch(() => {});
+  }
+  await kv.del('dbx_auth');
+}
+
+async function token() {
+  const a = await kv.get('dbx_auth');
+  if (!a) throw new Error('Nicht mit Dropbox verbunden.');
+  if (a.accessToken && Date.now() < a.expiresAt) return a.accessToken;
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: a.refreshToken, client_id: a.appKey }),
+  });
+  if (!res.ok) {
+    if (res.status === 400 || res.status === 401) await kv.del('dbx_auth');
+    throw new Error('Dropbox-Verbindung abgelaufen, bitte in den Einstellungen neu verbinden.');
+  }
+  const t = await res.json();
+  a.accessToken = t.access_token;
+  a.expiresAt = Date.now() + (t.expires_in - 60) * 1000;
+  await kv.set('dbx_auth', a);
+  return a.accessToken;
+}
+
+// Dropbox verlangt, dass der JSON-Header nur ASCII enthält.
+function headerArg(obj) {
+  return JSON.stringify(obj).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+
+export async function download(path) {
+  const res = await fetch(CONTENT + '/files/download', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + (await token()), 'Dropbox-API-Arg': headerArg({ path }) },
+  });
+  if (res.status === 409) {
+    const txt = await res.text();
+    if (txt.includes('not_found')) return null;
+    throw new Error('Dropbox: ' + txt);
+  }
+  if (!res.ok) throw new Error('Dropbox-Download fehlgeschlagen (' + res.status + ')');
+  const meta = JSON.parse(res.headers.get('Dropbox-API-Result') || '{}');
+  return { blob: await res.blob(), rev: meta.rev };
+}
+
+// mode: 'add' | 'overwrite' | { update: rev }
+export async function upload(path, data, mode = 'overwrite') {
+  const m = typeof mode === 'string' ? mode : { '.tag': 'update', update: mode.update };
+  const res = await fetch(CONTENT + '/files/upload', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + (await token()),
+      'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': headerArg({ path, mode: m, autorename: false, mute: true }),
+    },
+    body: data,
+  });
+  if (res.status === 409) {
+    const txt = await res.text();
+    if (txt.includes('conflict')) {
+      const e = new Error('conflict');
+      e.conflict = true;
+      throw e;
+    }
+    throw new Error('Dropbox: ' + txt);
+  }
+  if (!res.ok) throw new Error('Dropbox-Upload fehlgeschlagen (' + res.status + ')');
+  return res.json();
+}
+
+export async function remove(path) {
+  const res = await fetch(API + '/files/delete_v2', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + (await token()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!res.ok && res.status !== 409) throw new Error('Dropbox-Löschen fehlgeschlagen (' + res.status + ')');
+}

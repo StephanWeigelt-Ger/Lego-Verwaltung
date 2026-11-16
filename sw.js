@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline nutzbar.
 // Eigene Dateien: zuerst aus dem Netz (damit Updates sofort ankommen), sonst aus dem Cache.
-const CACHE = 'lego-v4';
+const CACHE = 'lego-v5';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/data.js', 'js/dropbox.js', 'js/photo.js', 'js/research.js', 'js/importer.js', 'js/config.js',
@@ -12,12 +12,13 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('lego-') && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Dropbox/Brickset nie cachen
+  if (url.pathname.includes('/pokemon/')) return; // gehört zum Pokémon-Collector (eigener Service Worker)
   e.respondWith(
     fetch(e.request)
       .then((res) => {
