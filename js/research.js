@@ -1,7 +1,9 @@
 // Online-Recherche der Setdaten.
 // 1) Set-Katalog (data/katalog.json, wöchentlich aus der freien Rebrickable-Datenbank erzeugt):
 //    Name, Erscheinungsjahr, Thema, Unterthema, Teileanzahl und Bild – ohne Schlüssel, sofort.
-// 2) Brickset-API (kostenloser Schlüssel): UVP Deutschland, Minifiguren, Retired-Status.
+//    Ist das GitHub-Secret BRICKSET_KEY gesetzt, enthält der Katalog auch UVP Deutschland, Minifiguren
+//    und Verkaufsende (von Brickset, ohne dass die App selbst einen Schlüssel braucht).
+// 2) Optional: Brickset-API direkt aus der App, falls in den Einstellungen ein Schlüssel hinterlegt ist.
 import { kv } from './store.js';
 import * as data from './data.js';
 
@@ -43,11 +45,17 @@ export async function lookupCatalog(number) {
   const n = bricksetNumber(number);
   const e = c[n] || c[String(number).trim()];
   if (!e) return null;
-  const [name, year, theme, subtheme, pieces] = e;
-  return {
+  const [name, year, theme, subtheme, pieces, uvp, minifigs, lastAvailable] = e;
+  const r = {
     name, year: year || null, theme, subtheme, pieces: pieces || null,
     imageUrl: `https://cdn.rebrickable.com/media/sets/${encodeURIComponent(n)}.jpg`,
+    uvp: uvp || null, minifigs: minifigs || null,
   };
+  if (lastAvailable) {
+    r.retiredDate = lastAvailable;
+    r.availability = new Date(lastAvailable) < new Date() ? 'retired' : 'erhältlich';
+  }
+  return r;
 }
 
 // ---------- Brickset ----------
@@ -99,8 +107,7 @@ export async function enrich(set, { overwrite = false } = {}) {
     const bs = await lookupBrickset(set.number);
     if (bs) { apply(bs); sources.push('Brickset'); }
   } catch (e) { bsError = e.message; }
-  const { brickset } = await getKeys();
-  if (!set.uvp) notes.push(!brickset ? 'UVP: Brickset-Schlüssel fehlt' : bsError || 'keine deutsche UVP gefunden');
+  if (!set.uvp) notes.push(bsError || 'keine deutsche UVP gefunden');
   if (!set.year) notes.push('Erscheinungsjahr nicht gefunden');
   set.research = {
     status: !sources.length ? 'notfound' : set.uvp && set.year ? 'ok' : 'partial',

@@ -122,7 +122,7 @@ function setItem(s) {
   const conds = act.map((c) => c.condition).filter(Boolean);
   const img = setImage(s);
   return `<a class="set-item" href="#/set/${s.id}">
-    ${img ? `<img class="thumb" src="${esc(img)}" alt="" loading="lazy">` : '<div class="thumb">🧱</div>'}
+    ${img ? `<img class="thumb" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb">🧱</div>'}
     <div>
       <div class="title">${esc(s.number)} ${esc(s.name)}</div>
       <div class="meta">${[s.theme, s.year].filter(Boolean).map(esc).join(' · ')}${s.uvp ? ' · UVP ' + eur(s.uvp) : ''}</div>
@@ -151,7 +151,7 @@ function renderNew() {
         <button class="btn primary" id="nCreate">Anlegen</button>
         <a class="btn" href="#/">Abbrechen</a>
       </div>
-      <p class="muted small">Nach dem Anlegen ergänzt die App automatisch Name, Thema, Erscheinungsjahr, Teileanzahl und Bild. Die UVP (Deutschland) kommt von Brickset, sobald dort ein Schlüssel hinterlegt ist (Einstellungen).</p>
+      <p class="muted small">Nach dem Anlegen ergänzt die App automatisch Name, Thema, Erscheinungsjahr, Teileanzahl und Bild. Die UVP (Deutschland) kommt aus der Brickset-Datenbank.</p>
     </div>`;
   let previewTimer;
   $('#nNumber').addEventListener('input', () => {
@@ -210,7 +210,7 @@ function renderSet(id) {
     <div class="row" style="margin-bottom:8px"><a href="#/" class="btn small">← Übersicht</a><span class="spacer"></span>
       <button class="btn small danger" id="delSet">Set löschen</button></div>
     <div class="detail-head">
-      ${img ? `<img class="hero" src="${esc(img)}" alt="">` : '<div class="hero thumb" style="font-size:48px">🧱</div>'}
+      ${img ? `<img class="hero" src="${esc(img)}" alt="" onerror="this.style.visibility='hidden'">` : '<div class="hero thumb" style="font-size:48px">🧱</div>'}
       <div>
         <h1>${esc(s.number)} ${esc(s.name) || '<span class="muted">Ohne Namen</span>'}</h1>
         <div class="muted">${[s.theme, s.subtheme, s.year].filter(Boolean).map(esc).join(' · ')}</div>
@@ -489,7 +489,7 @@ async function renderSettings() {
     </div>
 
     <h2>Online-Recherche</h2>
-    <p class="muted small">Name, Thema, Erscheinungsjahr, Teile und Bild werden automatisch aus dem Set-Katalog ergänzt. Für die deutsche UVP wird zusätzlich Brickset abgefragt.</p>
+    <p class="muted small">Name, Thema, Erscheinungsjahr, Teile und Bild werden automatisch aus dem Set-Katalog ergänzt. Die deutsche UVP stammt von Brickset und ist im Katalog enthalten; ein eigener Schlüssel hier ist nur optional.</p>
     <div class="card">
       <label class="field"><span>Brickset API-Schlüssel (kostenlos)</span><input id="bsKey" value="${esc(keys.brickset)}" placeholder="z. B. 3-ABCD-EFGH-IJKL"></label>
       <p class="muted small">Schlüssel beantragen: <a href="https://brickset.com/tools/webservices/requestkey" target="_blank" rel="noopener">brickset.com › API-Schlüssel</a>. Brickset erlaubt etwa 100 Set-Abfragen pro Tag.</p>
