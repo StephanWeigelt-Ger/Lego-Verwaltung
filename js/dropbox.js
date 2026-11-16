@@ -8,7 +8,7 @@ const API = 'https://api.dropboxapi.com/2';
 const CONTENT = 'https://content.dropboxapi.com/2';
 
 export function redirectUri() {
-  return location.origin + location.pathname;
+  return location.origin + location.pathname.replace(/index\.html$/, '');
 }
 
 function b64url(bytes) {
