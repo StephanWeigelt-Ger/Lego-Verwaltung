@@ -1,10 +1,10 @@
 // Service Worker: macht die App offline nutzbar.
 // Eigene Dateien: zuerst aus dem Netz (damit Updates sofort ankommen), sonst aus dem Cache.
-const CACHE = 'lego-v3';
+const CACHE = 'lego-v4';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/data.js', 'js/dropbox.js', 'js/photo.js', 'js/research.js', 'js/importer.js', 'js/config.js',
-  'vendor/xlsx.full.min.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
+  'vendor/xlsx.full.min.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png',
 ];
 
 self.addEventListener('install', (e) => {

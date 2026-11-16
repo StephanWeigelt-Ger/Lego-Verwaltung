@@ -1,7 +1,7 @@
 {
-  "name": "Lego Verwaltung",
-  "short_name": "Lego",
-  "description": "Verwaltung der Lego-Sammlung mit Käufen, Zustand und Fotos",
+  "name": "Collector",
+  "short_name": "Collector",
+  "description": "Lego-Sammlung verwalten: Käufe, Zustand, Fotos und UVP",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,8 +9,22 @@
   "theme_color": "#da291c",
   "lang": "de",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ]
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "./"
 }
