@@ -7,8 +7,14 @@ const TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
 const API = 'https://api.dropboxapi.com/2';
 const CONTENT = 'https://content.dropboxapi.com/2';
 
-export function redirectUri() {
+// Eigene Adresse der Pokémon-App
+function appUrl() {
   return location.origin + location.pathname.replace(/index\.html$/, '');
+}
+// Dropbox leitet nach der Anmeldung auf die Startseite der Lego-App zurück (diese Adresse ist in der
+// Dropbox-App hinterlegt); die Lego-App erkennt am Kennzeichen "pk." und reicht an /pokemon/ weiter.
+export function redirectUri() {
+  return appUrl().replace(/pokemon\/$/, '');
 }
 
 function b64url(bytes) {
@@ -20,7 +26,7 @@ function b64url(bytes) {
 export async function startLogin(appKey) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
-  const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
+  const state = 'pk.' + b64url(crypto.getRandomValues(new Uint8Array(12)));
   sessionStorage.setItem('dbx_pkce', JSON.stringify({ verifier, state, appKey }));
   const p = new URLSearchParams({
     client_id: appKey,
@@ -40,7 +46,7 @@ export async function finishLoginIfNeeded() {
   const code = q.get('code');
   if (!code && !q.get('error')) return false;
   const saved = JSON.parse(sessionStorage.getItem('dbx_pkce') || 'null');
-  history.replaceState(null, '', redirectUri() + location.hash);
+  history.replaceState(null, '', appUrl() + location.hash);
   if (q.get('error')) throw new Error('Dropbox-Anmeldung abgebrochen.');
   if (!saved || saved.state !== q.get('state')) throw new Error('Dropbox-Anmeldung ungültig, bitte erneut verbinden.');
   const res = await fetch(TOKEN_URL, {

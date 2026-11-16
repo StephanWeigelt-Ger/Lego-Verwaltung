@@ -630,6 +630,11 @@ data.onChange(() => {
 });
 
 async function init() {
+  // Rückkehr von der Dropbox-Anmeldung des Pokémon-Collectors: dorthin weiterreichen
+  if (/^pk\./.test(new URLSearchParams(location.search).get('state') || '')) {
+    location.replace('pokemon/' + location.search);
+    return;
+  }
   await data.load();
   try {
     if (await dbx.finishLoginIfNeeded()) toast('Mit Dropbox verbunden.');
