@@ -5,7 +5,8 @@ name: Pokémon-Katalog aktualisieren
 # Sets und Erscheinungsdaten ohne Schlüssel, auch offline und beim Excel-Import.
 on:
   schedule:
-    - cron: '41 3 * * 1'
+    # Sonntag 23:01 UTC = Montag 00:01 Uhr Winterzeit (Sommerzeit: 01:01 Uhr)
+    - cron: '1 23 * * 0'
   workflow_dispatch:
   push:
     branches: [main]
