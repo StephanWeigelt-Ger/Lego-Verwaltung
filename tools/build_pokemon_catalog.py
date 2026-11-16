@@ -10,7 +10,7 @@ API = 'https://api.tcgdex.net/v2'
 out = sys.argv[1]
 
 
-def get(path, tries=4):
+def get(path, tries=6):
     for i in range(tries):
         try:
             req = urllib.request.Request(f'{API}/{path}', headers={'User-Agent': 'collector-catalog/1.0'})
@@ -22,13 +22,16 @@ def get(path, tries=4):
             err = e
         except Exception as e:  # Netzwerkfehler: kurz warten und erneut versuchen
             err = e
-        time.sleep(2 * (i + 1))
-    raise RuntimeError(f'{path}: {err}')
+        time.sleep(min(5 * (i + 1), 30))
+    print('übersprungen:', path, err)
+    return None
 
 
 sets, cards = {}, {'de': [], 'en': []}
 for lang in ('de', 'en'):
     brief = get(f'{lang}/sets') or []
+    if not brief:
+        sys.exit(f'Setliste {lang} nicht geladen.')
     print(lang, len(brief), 'Sets')
     for b in brief:
         sid = b['id']
@@ -50,7 +53,7 @@ for lang in ('de', 'en'):
         e[6] = max(e[6], cc.get('total') or 0)
         for c in d.get('cards') or []:
             cards[lang].append([c['id'], c.get('localId', ''), c.get('name', ''), 1 if c.get('image') else 0])
-        time.sleep(0.1)
+        time.sleep(0.3)
 
 if len(sets) < 50:
     sys.exit('Zu wenige Sets geladen, Katalog wird nicht überschrieben.')
