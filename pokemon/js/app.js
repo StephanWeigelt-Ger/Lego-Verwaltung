@@ -668,7 +668,11 @@ async function renderSettings() {
       : `<p>Ohne Dropbox werden die Daten nur auf diesem Gerät gespeichert.</p>
         <label class="field"><span>Dropbox App-Key (derselbe wie bei der Lego-App)</span><input id="appKey" value="${esc(appKey)}" placeholder="z. B. abc123xyz"></label>
         <div class="row" style="margin-top:10px"><button class="btn primary" id="dbxOn">Mit Dropbox verbinden</button></div>
-        <p class="muted small">Weiterleitungs-Adresse für die Dropbox-App: <code>${esc(dbx.redirectUri())}</code></p>`}
+        <div id="dbxCodeBox" hidden style="margin-top:12px">
+          <p class="small"><b>So geht's:</b> Im neuen Fenster bei Dropbox auf „Zulassen“ tippen. Dropbox zeigt dann einen Code an. Diesen Code kopieren, hierher zurückkehren und unten einfügen.</p>
+          <label class="field"><span>Code von Dropbox</span><input id="dbxCode" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="dbxCodeOk">Verbindung abschließen</button></div>
+        </div>`}
     </div>
 
     <h2>Online-Recherche</h2>
@@ -705,11 +709,27 @@ async function renderSettings() {
     $('#syncNow').onclick = () => data.sync();
     $('#dbxOff').onclick = async () => { if (confirm('Verbindung zu Dropbox auf diesem Gerät trennen? Die Daten in der Dropbox bleiben erhalten.')) { await dbx.disconnect(); renderSettings(); updateSyncUi(); } };
   } else {
+    if (await kv.get('dbx_code_pkce')) $('#dbxCodeBox').hidden = false;
     $('#dbxOn').onclick = async () => {
       const k = $('#appKey').value.trim();
       if (!k) return toast('Bitte zuerst den Dropbox App-Key eintragen.');
       await kv.set('dropboxAppKey', k);
-      dbx.startLogin(k);
+      const win = window.open('about:blank', '_blank');
+      const url = await dbx.startCodeLogin(k);
+      if (win) win.location.href = url; else location.href = url;
+      $('#dbxCodeBox').hidden = false;
+      $('#dbxCode').focus();
+    };
+    $('#dbxCodeOk').onclick = async () => {
+      const code = $('#dbxCode').value.trim();
+      if (!code) return toast('Bitte den Code von Dropbox einfügen.');
+      try {
+        await dbx.finishCodeLogin(code);
+        toast('Mit Dropbox verbunden.');
+        await renderSettings();
+        updateSyncUi();
+        data.sync();
+      } catch (e) { toast(e.message, 5000); }
     };
   }
   $('#resMissing').onclick = () => runResearch(missing, $('#resProgress'), 'Recherche');
