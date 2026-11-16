@@ -114,6 +114,8 @@ export function merge(a, b) {
     if (out.deleted[id] && out.deleted[id] >= pick.updatedAt) continue;
     out.sets[id] = pick;
   }
+  const sa = a.settings, sb = b.settings;
+  if (sa || sb) out.settings = !sa ? sb : !sb ? sa : (sa.updatedAt >= sb.updatedAt ? sa : sb);
   out.updatedAt = a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt;
   return out;
 }

@@ -1,11 +1,20 @@
-// Online-Recherche von UVP (Deutschland) und Erscheinungsjahr über die Brickset-Datenbank.
-// Brickset stellt einen kostenlosen API-Schlüssel bereit (brickset.com/tools/webservices/requestkey).
+// Online-Recherche der Setdaten.
+// 1) Set-Katalog (data/katalog.json, wöchentlich aus der freien Rebrickable-Datenbank erzeugt):
+//    Name, Erscheinungsjahr, Thema, Unterthema, Teileanzahl und Bild – ohne Schlüssel, sofort.
+// 2) Brickset-API (kostenloser Schlüssel): UVP Deutschland, Minifiguren, Retired-Status.
 import { kv } from './store.js';
+import * as data from './data.js';
 
 export async function getKeys() {
-  return (await kv.get('apiKeys')) || { brickset: '' };
+  const synced = data.getSettings().brickset;
+  if (synced) return { brickset: synced };
+  const local = (await kv.get('apiKeys')) || { brickset: '' };
+  return local;
 }
-export async function setKeys(keys) { await kv.set('apiKeys', keys); }
+export async function setKeys(keys) {
+  await kv.set('apiKeys', keys);
+  await data.saveSettings({ brickset: keys.brickset || '' });
+}
 
 export function bricksetNumber(n) {
   const s = String(n || '').trim();
@@ -17,17 +26,42 @@ export function bricksetUrl(n) {
   return 'https://brickset.com/sets/' + encodeURIComponent(bricksetNumber(n));
 }
 
-// Liefert ein Objekt mit gefundenen Werten oder wirft einen Fehler.
-export async function lookup(number) {
+// ---------- Set-Katalog ----------
+let catalogPromise = null;
+function catalog() {
+  if (!catalogPromise) {
+    catalogPromise = fetch('data/katalog.json')
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}));
+    catalogPromise.then((c) => { if (!Object.keys(c).length) catalogPromise = null; });
+  }
+  return catalogPromise;
+}
+
+export async function lookupCatalog(number) {
+  const c = await catalog();
+  const n = bricksetNumber(number);
+  const e = c[n] || c[String(number).trim()];
+  if (!e) return null;
+  const [name, year, theme, subtheme, pieces] = e;
+  return {
+    name, year: year || null, theme, subtheme, pieces: pieces || null,
+    imageUrl: `https://cdn.rebrickable.com/media/sets/${encodeURIComponent(n)}.jpg`,
+  };
+}
+
+// ---------- Brickset ----------
+export async function lookupBrickset(number) {
   const { brickset } = await getKeys();
-  if (!brickset) throw new Error('Kein Brickset-API-Schlüssel hinterlegt (Einstellungen).');
+  if (!brickset) return null;
   const params = JSON.stringify({ setNumber: bricksetNumber(number), extendedData: 0 });
   const url = `https://brickset.com/api/v3.asmx/getSets?apiKey=${encodeURIComponent(brickset)}&userHash=&params=${encodeURIComponent(params)}`;
-  const res = await fetch(url);
+  let res;
+  try { res = await fetch(url); } catch { throw new Error('Brickset nicht erreichbar'); }
   if (!res.ok) throw new Error('Brickset nicht erreichbar (' + res.status + ')');
-  const data = await res.json();
-  if (data.status !== 'success') throw new Error('Brickset: ' + (data.message || 'Fehler'));
-  const s = data.sets && data.sets[0];
+  const json = await res.json();
+  if (json.status !== 'success') throw new Error('Brickset: ' + (json.message || 'Fehler'));
+  const s = json.sets && json.sets[0];
   if (!s) return null;
   const de = s.LEGOCom?.DE || {};
   const last = de.dateLastAvailable || s.exitDate || '';
@@ -45,24 +79,34 @@ export async function lookup(number) {
   };
 }
 
-// Ergänzt nur fehlende Felder, überschreibt keine eigenen Eingaben.
+const FIELDS = ['name', 'theme', 'subtheme', 'year', 'uvp', 'pieces', 'minifigs', 'imageUrl', 'retiredDate', 'availability'];
+
+// Ergänzt fehlende Felder (eigene Eingaben bleiben erhalten, außer overwrite = true).
 export async function enrich(set, { overwrite = false } = {}) {
-  try {
-    const r = await lookup(set.number);
-    if (!r) {
-      set.research = { status: 'notfound', source: 'Brickset', at: new Date().toISOString(), message: 'Set nicht gefunden' };
-      return set;
-    }
-    for (const k of ['name', 'theme', 'subtheme', 'year', 'uvp', 'pieces', 'minifigs', 'imageUrl', 'retiredDate', 'availability']) {
+  const sources = [];
+  const notes = [];
+  const apply = (r) => {
+    for (const k of FIELDS) {
+      if (r[k] === null || r[k] === undefined || r[k] === '') continue;
       const empty = set[k] === null || set[k] === '' || set[k] === undefined;
-      if ((empty || overwrite) && r[k] !== null && r[k] !== '') set[k] = r[k];
+      if (empty || overwrite) set[k] = r[k];
     }
-    set.research = {
-      status: r.uvp ? 'ok' : 'partial', source: 'Brickset', at: new Date().toISOString(),
-      message: r.uvp ? '' : 'Keine deutsche UVP gefunden',
-    };
-  } catch (e) {
-    set.research = { status: 'error', source: 'Brickset', at: new Date().toISOString(), message: e.message };
-  }
+  };
+  const cat = await lookupCatalog(set.number);
+  if (cat) { apply(cat); sources.push('Set-Katalog'); }
+  let bsError = '';
+  try {
+    const bs = await lookupBrickset(set.number);
+    if (bs) { apply(bs); sources.push('Brickset'); }
+  } catch (e) { bsError = e.message; }
+  const { brickset } = await getKeys();
+  if (!set.uvp) notes.push(!brickset ? 'UVP: Brickset-Schlüssel fehlt' : bsError || 'keine deutsche UVP gefunden');
+  if (!set.year) notes.push('Erscheinungsjahr nicht gefunden');
+  set.research = {
+    status: !sources.length ? 'notfound' : set.uvp && set.year ? 'ok' : 'partial',
+    source: sources.join(' + ') || '–',
+    at: new Date().toISOString(),
+    message: !sources.length ? 'Set nicht gefunden' + (notes.length ? ' (' + notes.join(', ') + ')' : '') : notes.join(', '),
+  };
   return set;
 }

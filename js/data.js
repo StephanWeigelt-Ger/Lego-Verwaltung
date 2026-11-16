@@ -53,6 +53,16 @@ export async function remove(id) {
   if (set) for (const p of set.photos) deletePhotoFile(p.id);
 }
 
+// Einstellungen, die über Dropbox auf alle Geräte übertragen werden (z. B. Brickset-Schlüssel)
+export function getSettings() { return collection.settings || {}; }
+export async function saveSettings(values) {
+  collection.settings = { ...(collection.settings || {}), ...values, updatedAt: now() };
+  collection.updatedAt = now();
+  await kv.set('collection', collection);
+  emit();
+  scheduleSync(500);
+}
+
 export function exportJson() { return JSON.stringify(collection, null, 2); }
 
 export async function replaceAll(data) {

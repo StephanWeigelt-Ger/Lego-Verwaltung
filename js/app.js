@@ -145,13 +145,27 @@ function renderNew() {
         <label class="field"><span>Setnummer</span><input id="nNumber" inputmode="text" placeholder="z. B. 10294" autofocus></label>
         <label class="field"><span>Name (optional, wird recherchiert)</span><input id="nName"></label>
       </div>
+      <p id="nPreview" class="small" style="min-height:1.4em"></p>
       <label class="check"><input type="checkbox" id="nWish"> Nur auf die Wunschliste (noch nicht gekauft)</label>
       <div class="row" style="margin-top:10px">
         <button class="btn primary" id="nCreate">Anlegen</button>
         <a class="btn" href="#/">Abbrechen</a>
       </div>
-      <p class="muted small">Nach dem Anlegen sucht die App automatisch UVP (Deutschland), Erscheinungsjahr, Teileanzahl und Bild.</p>
+      <p class="muted small">Nach dem Anlegen ergänzt die App automatisch Name, Thema, Erscheinungsjahr, Teileanzahl und Bild. Die UVP (Deutschland) kommt von Brickset, sobald dort ein Schlüssel hinterlegt ist (Einstellungen).</p>
     </div>`;
+  let previewTimer;
+  $('#nNumber').addEventListener('input', () => {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async () => {
+      const n = normalizeSetNumber($('#nNumber').value);
+      const hit = n ? await research.lookupCatalog(n) : null;
+      $('#nPreview').innerHTML = hit
+        ? `<b>${esc(hit.name)}</b> · ${esc([hit.theme, hit.year, hit.pieces ? hit.pieces + ' Teile' : ''].filter(Boolean).join(' · '))}`
+        : n.length >= 3 ? '<span class="muted">Noch kein Treffer im Set-Katalog</span>' : '';
+      if (hit && !$('#nName').value) $('#nName').placeholder = hit.name;
+    }, 250);
+  });
+  $('#nNumber').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#nCreate').click(); });
   $('#nCreate').onclick = async () => {
     const number = normalizeSetNumber($('#nNumber').value);
     const name = $('#nName').value.trim();
@@ -172,8 +186,6 @@ function renderNew() {
 }
 
 async function autoResearch(id, overwrite = false) {
-  const keys = await research.getKeys();
-  if (!keys.brickset) { toast('Für die automatische Recherche bitte den Brickset-Schlüssel in den Einstellungen eintragen.', 4500); return; }
   const set = data.get(id);
   if (!set) return;
   toast('Recherche läuft …');
@@ -261,8 +273,10 @@ function renderSet(id) {
       let v = el.type === 'checkbox' ? el.checked : el.value;
       if (['year', 'uvp', 'pieces', 'minifigs', 'marketValue'].includes(f)) v = numOrNull(v);
       if (typeof v === 'string') v = v.trim();
-      s[f] = v;
+      const numberChanged = f === 'number' && normalizeSetNumber(v) !== normalizeSetNumber(s.number);
+      s[f] = f === 'number' ? normalizeSetNumber(v) : v;
       await data.save(s);
+      if (numberChanged && s.number) { autoResearch(id, true); return; }
       if (['number', 'name', 'availability', 'wishlist', 'uvp', 'year', 'theme'].includes(f)) renderSet(id);
     });
   });
@@ -474,7 +488,8 @@ async function renderSettings() {
         <p class="muted small">Weiterleitungs-Adresse für die Dropbox-App: <code>${esc(dbx.redirectUri())}</code></p>`}
     </div>
 
-    <h2>Online-Recherche (UVP & Erscheinungsjahr)</h2>
+    <h2>Online-Recherche</h2>
+    <p class="muted small">Name, Thema, Erscheinungsjahr, Teile und Bild werden automatisch aus dem Set-Katalog ergänzt. Für die deutsche UVP wird zusätzlich Brickset abgefragt.</p>
     <div class="card">
       <label class="field"><span>Brickset API-Schlüssel (kostenlos)</span><input id="bsKey" value="${esc(keys.brickset)}" placeholder="z. B. 3-ABCD-EFGH-IJKL"></label>
       <p class="muted small">Schlüssel beantragen: <a href="https://brickset.com/tools/webservices/requestkey" target="_blank" rel="noopener">brickset.com › API-Schlüssel</a>. Brickset erlaubt etwa 100 Set-Abfragen pro Tag.</p>
