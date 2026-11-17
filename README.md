@@ -17,4 +17,4 @@ Daten liegen lokal in IndexedDB und werden als `sammlung.json` plus `fotos/*.jpg
 Lokal starten: `python3 -m http.server 8765` im Projektordner, dann http://localhost:8765 öffnen.
 
 ## Pokémon-Collector
-Die Pokémon-App ist in ein eigenes Repository umgezogen: https://github.com/StephanWeigelt-Ger/pokemon-collector (Adresse https://stephanweigelt-ger.github.io/pokemon-collector/). Der Ordner `pokemon/` leitet nur noch dorthin weiter.
+Die Pokémon-App ist in ein eigenes Repository umgezogen: https://github.com/StephanWeigelt-Ger/Pokemon-collector (Adresse https://stephanweigelt-ger.github.io/Pokemon-collector/). Der Ordner `pokemon/` leitet nur noch dorthin weiter.

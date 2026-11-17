@@ -6,6 +6,6 @@ self.addEventListener('activate', (e) => {
     await Promise.all(keys.filter((k) => k.startsWith('pokemon-')).map((k) => caches.delete(k)));
     await self.registration.unregister();
     const clients = await self.clients.matchAll({ type: 'window' });
-    clients.forEach((c) => c.navigate('https://stephanweigelt-ger.github.io/pokemon-collector/'));
+    clients.forEach((c) => c.navigate('https://stephanweigelt-ger.github.io/Pokemon-collector/'));
   })());
 });
