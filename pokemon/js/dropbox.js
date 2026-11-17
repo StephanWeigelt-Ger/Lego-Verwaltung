@@ -145,6 +145,20 @@ function headerArg(obj) {
   return JSON.stringify(obj).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 }
 
+// Anfrage mit Zugangsschlüssel; lehnt Dropbox den Schlüssel ab (401), wird er einmal erneuert und neu versucht.
+async function send(url, headers, body) {
+  const go = async () => fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + (await token()), ...headers }, body });
+  let res = await go();
+  if (res.status === 401) {
+    const txt = await res.clone().text().catch(() => '');
+    if (!txt.includes('missing_scope')) {
+      const a = await kv.get('dbx_auth');
+      if (a && a.refreshToken) { a.expiresAt = 0; await kv.set('dbx_auth', a); res = await go(); }
+    }
+  }
+  return res;
+}
+
 // Fehlermeldung von Dropbox verständlich machen (z. B. fehlende Berechtigung der Dropbox-App).
 async function fail(res, what) {
   let txt = '';
@@ -157,14 +171,15 @@ async function fail(res, what) {
     throw e;
   }
   console.warn('Dropbox', what, res.status, txt);
+  if (res.status === 401) {
+    await kv.del('dbx_auth');
+    throw new Error('Die Dropbox-Verbindung ist nicht mehr gültig. Bitte oben auf „Dropbox verbinden“ tippen und neu verbinden.');
+  }
   throw new Error('Dropbox-' + what + ' fehlgeschlagen (' + res.status + ')' + (txt ? ': ' + txt.slice(0, 160) : ''));
 }
 
 export async function download(path) {
-  const res = await fetch(CONTENT + '/files/download', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + (await token()), 'Dropbox-API-Arg': headerArg({ path }) },
-  });
+  const res = await send(CONTENT + '/files/download', { 'Dropbox-API-Arg': headerArg({ path }) });
   if (res.status === 409) {
     const txt = await res.text();
     if (txt.includes('not_found')) return null;
@@ -178,15 +193,10 @@ export async function download(path) {
 // mode: 'add' | 'overwrite' | { update: rev }
 export async function upload(path, data, mode = 'overwrite') {
   const m = typeof mode === 'string' ? mode : { '.tag': 'update', update: mode.update };
-  const res = await fetch(CONTENT + '/files/upload', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + (await token()),
-      'Content-Type': 'application/octet-stream',
-      'Dropbox-API-Arg': headerArg({ path, mode: m, autorename: false, mute: true }),
-    },
-    body: data,
-  });
+  const res = await send(CONTENT + '/files/upload', {
+    'Content-Type': 'application/octet-stream',
+    'Dropbox-API-Arg': headerArg({ path, mode: m, autorename: false, mute: true }),
+  }, data);
   if (res.status === 409) {
     const txt = await res.text();
     if (txt.includes('conflict')) {
@@ -201,10 +211,6 @@ export async function upload(path, data, mode = 'overwrite') {
 }
 
 export async function remove(path) {
-  const res = await fetch(API + '/files/delete_v2', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + (await token()), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
-  });
+  const res = await send(API + '/files/delete_v2', { 'Content-Type': 'application/json' }, JSON.stringify({ path }));
   if (!res.ok && res.status !== 409) await fail(res, 'Löschen');
 }
