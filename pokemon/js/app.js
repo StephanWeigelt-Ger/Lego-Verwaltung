@@ -42,7 +42,11 @@ function copyValue(s, c) {
   if (isCard(s) && s.marketValueHolo && /holo|reverse|ball/i.test(c.variant || '') && !/^holo$/i.test(s.rarity || '')) return s.marketValueHolo;
   return s.marketValue || 0;
 }
-function itemImage(s) { return s.photos.length ? s.photos[0].thumb : s.imageUrl || ''; }
+// Titelbild: selbst gewähltes Foto, sonst das automatisch gefundene Bild, sonst das erste eigene Foto
+function itemImage(s) {
+  const own = s.titlePhoto && s.photos.find((p) => p.id === s.titlePhoto);
+  return own ? own.thumb : s.imageUrl || (s.photos[0] ? s.photos[0].thumb : '');
+}
 function numberLabel(s) { return s.number ? s.number + (s.setTotal ? '/' + s.setTotal : '') : ''; }
 function title(s) { return s.name || s.productType || 'Ohne Namen'; }
 
@@ -404,7 +408,8 @@ function renderItem(id) {
     ${s.copies.length ? `<p class="muted small">Summe Einkauf: ${eur(s.copies.reduce((a, c) => a + (c.price || 0), 0))}
       · Durchschnitt: ${eur(s.copies.filter((c) => c.price).reduce((a, c, _, arr) => a + c.price / arr.length, 0) || null)}</p>` : ''}
 
-    <h2>Fotos (${s.photos.length})</h2>
+    <h2>Eigene Fotos (${s.photos.length})</h2>
+    <p class="muted small">Ergänzend zum automatisch gefundenen Bild, beliebig viele, auch je Exemplar (z. B. Vorder- und Rückseite, Beschädigungen).</p>
     <div class="row" style="margin-bottom:10px">
       <label class="btn">📷 Foto aufnehmen<input type="file" accept="image/*" capture="environment" id="camInput" hidden></label>
       <label class="btn">🖼️ Aus Mediathek<input type="file" accept="image/*" multiple id="libInput" hidden></label>
@@ -611,7 +616,7 @@ async function showPhoto(item, photoId) {
     <p class="muted small" id="pInfo">Lade Foto in voller Größe …</p>
     <label class="field"><span>Gehört zu</span><select id="pCopy"><option value="">allgemein</option>
       ${item.copies.map((c, i) => `<option value="${c.id}" ${p.copyId === c.id ? 'selected' : ''}>Exemplar ${i + 1}</option>`).join('')}</select></label>
-    <div class="row" style="margin-top:12px"><button class="btn" id="pFirst">Als Titelbild</button><a class="btn" id="pDl" download="pokemon-${esc(item.id)}.jpg">Herunterladen</a>
+    <div class="row" style="margin-top:12px"><button class="btn" id="pFirst">${item.titlePhoto === p.id ? 'Nicht mehr als Titelbild' : 'Als Titelbild'}</button><a class="btn" id="pDl" download="pokemon-${esc(item.id)}.jpg">Herunterladen</a>
       <span class="spacer"></span><button class="btn danger" id="pDel">Löschen</button><button class="btn" id="pClose">Schließen</button></div>`);
   try {
     const blob = await data.getPhotoBlob(photoId);
@@ -624,7 +629,7 @@ async function showPhoto(item, photoId) {
   } catch (e) { m.querySelector('#pInfo').textContent = 'Fehler: ' + e.message; }
   m.querySelector('#pClose').onclick = () => m.remove();
   m.querySelector('#pCopy').onchange = async (e) => { p.copyId = e.target.value || null; await data.save(item); renderItem(item.id); };
-  m.querySelector('#pFirst').onclick = async () => { item.photos = [p, ...item.photos.filter((x) => x !== p)]; await data.save(item); m.remove(); renderItem(item.id); };
+  m.querySelector('#pFirst').onclick = async () => { item.titlePhoto = item.titlePhoto === p.id ? null : p.id; await data.save(item); m.remove(); renderItem(item.id); };
   m.querySelector('#pDel').onclick = async () => {
     if (!confirm('Foto löschen?')) return;
     item.photos = item.photos.filter((x) => x.id !== photoId);

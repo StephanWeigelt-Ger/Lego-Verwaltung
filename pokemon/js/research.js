@@ -180,7 +180,8 @@ export async function lookupCard(tcgdexId, language = 'Deutsch') {
 export async function lookupProductSet(setName) {
   const s = await findSet(setName);
   if (!s) return null;
-  return { setId: s.id, setName: s.nameDe || s.nameEn, serie: s.serie, releaseDate: s.releaseDate || '', year: s.releaseDate ? Number(s.releaseDate.slice(0, 4)) : null };
+  return { setId: s.id, setName: s.nameDe || s.nameEn, serie: s.serie, releaseDate: s.releaseDate || '', year: s.releaseDate ? Number(s.releaseDate.slice(0, 4)) : null,
+    logo: s.serieId ? `https://assets.tcgdex.net/${s.nameDe ? 'de' : 'en'}/${s.serieId}/${s.id}/logo.png` : '' };
 }
 
 const CARD_FIELDS = ['name', 'pokemon', 'number', 'setId', 'setName', 'serie', 'setTotal', 'rarity', 'category', 'types', 'hp', 'illustrator', 'imageUrl', 'releaseDate', 'year', 'tcgdexId'];
@@ -225,11 +226,15 @@ export async function enrich(item, { overwrite = false } = {}) {
         const v = p.trend ?? p.avg30 ?? null;
         if (v != null) { item.marketValue = v; item.marketUpdated = (p.stand || '').slice(0, 10); }
         else notes.push('kein Cardmarket-Preis');
+        if (p.image && (!item.imageUrl || item.imageAuto)) { item.imageUrl = p.image; item.imageAuto = true; }
       }
     } else notes.push('kein passendes Cardmarket-Produkt gefunden');
     if (item.setName) {
       const r = await lookupProductSet(item.setName);
-      if (r) { apply(r, ['setId', 'serie', 'releaseDate', 'year'], overwrite); sources.push('Katalog'); }
+      if (r) {
+        apply(r, ['setId', 'serie', 'releaseDate', 'year'], overwrite); sources.push('Katalog');
+        if (!item.imageUrl && r.logo) { item.imageUrl = r.logo; item.imageAuto = true; }
+      }
       else notes.push('Set nicht im Katalog gefunden');
     }
     if (!item.uvp) notes.push('UVP bitte von Hand eintragen');
@@ -265,9 +270,10 @@ const DE_EN = [[/top[\s-]*trainer[\s-]*box|ttb/g, 'elite trainer box'], [/displa
   [/karmesin\s*(&|und)?\s*purpur/g, 'scarlet violet'], [/schwert\s*(&|und)?\s*schild/g, 'sword shield'], [/sonne\s*(&|und)?\s*mond/g, 'sun moon']];
 
 function productRow(r, stand) {
-  const [id, name, type, exp, trend, avg30, low] = r;
-  return { id, name, type, exp, trend, avg30, low, stand };
+  const [id, name, type, exp, trend, avg30, low, img] = r;
+  return { id, name, type, exp, trend, avg30, low, stand, image: img ? `https://tcgplayer-cdn.tcgplayer.com/product/${img}_200w.jpg` : '' };
 }
+
 
 export async function searchProducts(query, limit = 40) {
   const c = await products();
