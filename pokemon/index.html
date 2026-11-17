@@ -2,32 +2,28 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Pokémon-Collector</title>
-  <meta name="theme-color" content="#2a52b0">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Pokémon-Collector">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/favicon.png">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="../css/app.css">
-  <link rel="stylesheet" href="css/app.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pokémon-Collector ist umgezogen</title>
+  <meta http-equiv="refresh" content="3;url=https://stephanweigelt-ger.github.io/Pokemon-collector/">
+  <style>body{font-family:-apple-system,system-ui,sans-serif;background:#2a52b0;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;text-align:center}a{color:#ffd23f}</style>
 </head>
 <body>
-  <header class="topbar">
-    <a href="#/" class="brand"><img src="icons/favicon.png" alt=""><span>Pokémon-Collector</span></a>
-    <div class="topbar-actions">
-      <button id="syncBtn" class="icon-btn" title="Synchronisieren" aria-label="Synchronisieren"><span id="syncIcon">⟳</span></button>
-      <a href="#/einstellungen" class="icon-btn" title="Einstellungen" aria-label="Einstellungen">⚙︎</a>
-    </div>
-  </header>
-  <div id="syncBar" class="sync-bar" hidden></div>
-  <div id="weeklyBar" class="sync-bar" hidden></div>
-  <main id="app" class="container"></main>
-  <div id="toast" class="toast" hidden></div>
-  <script src="../vendor/xlsx.full.min.js" defer></script>
-  <script type="module" src="js/app.js"></script>
+  <div>
+    <h1>Pokémon-Collector ist umgezogen</h1>
+    <p>Neue Adresse: <a href="https://stephanweigelt-ger.github.io/Pokemon-collector/">stephanweigelt-ger.github.io/Pokemon-collector</a></p>
+    <p>Bitte das Symbol auf dem Home-Bildschirm löschen und von der neuen Adresse aus neu anlegen.</p>
+  </div>
+  <script>
+    // Alten Offline-Speicher dieser Adresse entfernen, dann weiterleiten.
+    (async () => {
+      try {
+        const regs = await navigator.serviceWorker?.getRegistrations() || [];
+        await Promise.all(regs.filter((r) => r.scope.includes('/pokemon/')).map((r) => r.unregister()));
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((k) => k.startsWith('pokemon-')).map((k) => caches.delete(k)));
+      } catch (e) { /* egal */ }
+      setTimeout(() => location.replace('https://stephanweigelt-ger.github.io/Pokemon-collector/' + location.hash), 1500);
+    })();
+  </script>
 </body>
 </html>
