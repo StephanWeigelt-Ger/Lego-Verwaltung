@@ -145,6 +145,21 @@ function headerArg(obj) {
   return JSON.stringify(obj).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 }
 
+// Fehlermeldung von Dropbox verständlich machen (z. B. fehlende Berechtigung der Dropbox-App).
+async function fail(res, what) {
+  let txt = '';
+  try { txt = await res.text(); } catch (e) { /* egal */ }
+  const scope = (txt.match(/required scope '([^']+)'/) || txt.match(/"required_scope":\s*"([^"]+)"/) || [])[1];
+  if (scope || txt.includes('missing_scope')) {
+    await kv.del('dbx_auth');
+    const e = new Error('Der Dropbox-App fehlt die Berechtigung „' + (scope || 'files.content') + '“. Bitte auf dropbox.com/developers/apps die App öffnen, unter „Permissions“ files.content.read und files.content.write anhaken, „Submit“ tippen und danach hier neu mit Dropbox verbinden.');
+    e.scope = true;
+    throw e;
+  }
+  console.warn('Dropbox', what, res.status, txt);
+  throw new Error('Dropbox-' + what + ' fehlgeschlagen (' + res.status + ')' + (txt ? ': ' + txt.slice(0, 160) : ''));
+}
+
 export async function download(path) {
   const res = await fetch(CONTENT + '/files/download', {
     method: 'POST',
@@ -155,7 +170,7 @@ export async function download(path) {
     if (txt.includes('not_found')) return null;
     throw new Error('Dropbox: ' + txt);
   }
-  if (!res.ok) throw new Error('Dropbox-Download fehlgeschlagen (' + res.status + ')');
+  if (!res.ok) await fail(res, 'Download');
   const meta = JSON.parse(res.headers.get('Dropbox-API-Result') || '{}');
   return { blob: await res.blob(), rev: meta.rev };
 }
@@ -181,7 +196,7 @@ export async function upload(path, data, mode = 'overwrite') {
     }
     throw new Error('Dropbox: ' + txt);
   }
-  if (!res.ok) throw new Error('Dropbox-Upload fehlgeschlagen (' + res.status + ')');
+  if (!res.ok) await fail(res, 'Upload');
   return res.json();
 }
 
@@ -191,5 +206,5 @@ export async function remove(path) {
     headers: { Authorization: 'Bearer ' + (await token()), 'Content-Type': 'application/json' },
     body: JSON.stringify({ path }),
   });
-  if (!res.ok && res.status !== 409) throw new Error('Dropbox-Löschen fehlgeschlagen (' + res.status + ')');
+  if (!res.ok && res.status !== 409) await fail(res, 'Löschen');
 }
