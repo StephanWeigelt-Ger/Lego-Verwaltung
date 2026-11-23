@@ -12,6 +12,8 @@ let syncing = false;
 let syncAgain = false;
 
 export const state = { status: 'offline', message: '', lastSync: null };
+const afterSyncHooks = [];
+export function onAfterSync(fn) { afterSyncHooks.push(fn); }
 
 export function onChange(fn) { listeners.push(fn); }
 function emit() { listeners.forEach((fn) => fn()); }
@@ -154,6 +156,7 @@ export async function sync() {
     state.lastSync = now();
     await kv.set('lastSync', state.lastSync);
     setStatus('ok');
+    afterSyncHooks.forEach((fn) => Promise.resolve().then(fn).catch(console.error));
   } catch (e) {
     console.error(e);
     setStatus('error', e.message);

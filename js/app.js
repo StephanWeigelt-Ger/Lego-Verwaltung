@@ -5,6 +5,7 @@ import * as photo from './photo.js';
 import * as research from './research.js';
 import * as importer from './importer.js';
 import { DROPBOX_APP_KEY } from './config.js';
+import * as dropimport from './dropimport.js';
 
 const app = document.getElementById('app');
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -656,6 +657,8 @@ async function init() {
     return;
   }
   await data.load();
+  data.onAfterSync(() => dropimport.run());
+  window.addEventListener('lego-import', (e) => { toast(`Import aus der Excel-Liste: ${e.detail.count} Sets übernommen.`, 5000); route(); });
   try {
     if (await dbx.finishLoginIfNeeded()) toast('Mit Dropbox verbunden.');
   } catch (e) { toast(e.message, 5000); }
