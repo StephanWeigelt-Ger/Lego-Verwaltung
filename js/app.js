@@ -6,6 +6,7 @@ import * as research from './research.js';
 import * as importer from './importer.js';
 import { DROPBOX_APP_KEY } from './config.js';
 import * as dropimport from './dropimport.js';
+import * as scan from './scan.js';
 
 const app = document.getElementById('app');
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -132,6 +133,7 @@ function setItem(s) {
         ${conds.length ? `<span class="badge">Zustand ${conds.join(' / ')}</span>` : ''}
         ${s.availability === 'retired' ? '<span class="badge red">Retired</span>' : ''}
         ${!s.uvp || !s.year ? '<span class="badge warn">Daten fehlen</span>' : ''}
+        ${!s.wishlist && act.some((c) => c.price === null || c.price === undefined) ? '<span class="badge warn">Preis fehlt</span>' : ''}
       </div>
     </div>
   </a>`;
@@ -142,48 +144,101 @@ function renderNew() {
   app.innerHTML = `
     <h1>Neues Set</h1>
     <div class="card">
-      <div class="grid two">
-        <label class="field"><span>Setnummer</span><input id="nNumber" inputmode="text" placeholder="z. B. 10294" autofocus></label>
+      <div class="row" style="margin-bottom:6px">
+        <label class="btn">📷 Verpackung fotografieren<input type="file" accept="image/*" capture="environment" id="nCam" hidden></label>
+        <label class="btn">🖼️ Foto aus Mediathek<input type="file" accept="image/*" id="nLib" hidden></label>
+      </div>
+      <p class="muted small" id="nScan">Die App liest die Setnummer aus dem Foto und ergänzt danach alle Daten. Das Foto wird dem Set hinzugefügt.</p>
+      <div id="nCands" class="row"></div>
+      <div class="grid two" style="margin-top:8px">
+        <label class="field"><span>Setnummer</span><input id="nNumber" inputmode="text" placeholder="z. B. 10294"></label>
         <label class="field"><span>Name (optional, wird recherchiert)</span><input id="nName"></label>
       </div>
       <p id="nPreview" class="small" style="min-height:1.4em"></p>
       <label class="check"><input type="checkbox" id="nWish"> Nur auf die Wunschliste (noch nicht gekauft)</label>
+      <div class="grid two" id="nBuy" style="margin-top:8px">
+        <label class="field"><span>Einkaufspreis (€)</span><input id="nPrice" type="number" step="0.01" inputmode="decimal" placeholder="z. B. 199,99"></label>
+        <label class="field"><span>Kaufdatum</span><input id="nDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></label>
+      </div>
       <div class="row" style="margin-top:10px">
         <button class="btn primary" id="nCreate">Anlegen</button>
+        <button class="btn" id="nLater">Preis später eintragen</button>
         <a class="btn" href="#/">Abbrechen</a>
       </div>
-      <p class="muted small">Nach dem Anlegen ergänzt die App automatisch Name, Thema, Erscheinungsjahr, Teileanzahl und Bild. Die UVP (Deutschland) kommt aus der Brickset-Datenbank.</p>
+      <p class="muted small">Nach dem Anlegen ergänzt die App automatisch Name, Thema, Erscheinungsjahr, Teileanzahl, Bild und die UVP (Deutschland). Sets ohne Einkaufspreis sind in der Liste mit „Preis fehlt“ markiert.</p>
     </div>`;
+  let photoFile = null;
   let previewTimer;
-  $('#nNumber').addEventListener('input', () => {
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(async () => {
-      const n = normalizeSetNumber($('#nNumber').value);
-      const hit = n ? await research.lookupCatalog(n) : null;
-      $('#nPreview').innerHTML = hit
-        ? `<b>${esc(hit.name)}</b> · ${esc([hit.theme, hit.year, hit.pieces ? hit.pieces + ' Teile' : ''].filter(Boolean).join(' · '))}`
-        : n.length >= 3 ? '<span class="muted">Noch kein Treffer im Set-Katalog</span>' : '';
-      if (hit && !$('#nName').value) $('#nName').placeholder = hit.name;
-    }, 250);
-  });
+  const showPreview = async () => {
+    const n = normalizeSetNumber($('#nNumber').value);
+    const hit = n ? await research.lookupCatalog(n) : null;
+    $('#nPreview').innerHTML = hit
+      ? `<b>${esc(hit.name)}</b> · ${esc([hit.theme, hit.year, hit.pieces ? hit.pieces + ' Teile' : '', hit.uvp ? 'UVP ' + eur(hit.uvp) : ''].filter(Boolean).join(' · '))}`
+      : n.length >= 3 ? '<span class="muted">Noch kein Treffer im Set-Katalog</span>' : '';
+    $('#nName').placeholder = hit ? hit.name : '';
+  };
+  $('#nNumber').addEventListener('input', () => { clearTimeout(previewTimer); previewTimer = setTimeout(showPreview, 250); });
   $('#nNumber').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#nCreate').click(); });
-  $('#nCreate').onclick = async () => {
+  $('#nWish').onchange = () => { const w = $('#nWish').checked; $('#nBuy').hidden = w; $('#nLater').hidden = w; };
+
+  const onPhoto = async (file) => {
+    if (!file) return;
+    photoFile = file;
+    const info = $('#nScan');
+    $('#nCands').innerHTML = '';
+    try {
+      const img = await photo.loadImage(file);
+      const found = await scan.findSetNumbers(img, (t) => (info.textContent = t));
+      if (!found.length) {
+        info.innerHTML = 'Keine Setnummer erkannt. Bitte die Nummer eintippen, das Foto wird trotzdem gespeichert. <span class="muted">Tipp: Vorderseite mit der Setnummer gerade und formatfüllend fotografieren.</span>';
+        $('#nNumber').focus();
+        return;
+      }
+      const pick = (f) => {
+        $('#nNumber').value = f.number;
+        $$('#nCands button').forEach((b) => b.classList.toggle('primary', b.dataset.n === f.number));
+        showPreview();
+      };
+      info.textContent = found.length > 1 ? 'Erkannt. Falls die Nummer nicht stimmt, wähle eine andere:' : 'Setnummer erkannt.';
+      $('#nCands').innerHTML = found.map((f) => `<button class="btn small" data-n="${esc(f.number)}">${esc(f.number)} · ${esc(f.hit.name)}</button>`).join('');
+      $$('#nCands button').forEach((b, i) => (b.onclick = () => pick(found[i])));
+      pick(found[0]);
+      $('#nPrice').focus();
+    } catch (e) {
+      info.textContent = 'Erkennung nicht möglich (' + e.message + '). Bitte die Nummer eintippen, das Foto wird trotzdem gespeichert.';
+    }
+  };
+  $('#nCam').onchange = (e) => onPhoto(e.target.files[0]);
+  $('#nLib').onchange = (e) => onPhoto(e.target.files[0]);
+
+  const create = async (priceLater) => {
     const number = normalizeSetNumber($('#nNumber').value);
     const name = $('#nName').value.trim();
     if (!number && !name) return toast('Bitte Setnummer oder Name eingeben.');
+    const wish = $('#nWish').checked;
+    const price = numOrNull($('#nPrice').value);
+    if (!wish && !priceLater && price === null) {
+      $('#nPrice').focus();
+      return toast('Wie hoch war der Einkaufspreis? Oder „Preis später eintragen“ wählen.', 4000);
+    }
     const existing = data.all().find((s) => number && normalizeSetNumber(s.number).toLowerCase() === number.toLowerCase());
     if (existing && !confirm(`Set ${number} ist schon vorhanden. Stattdessen ein weiteres Exemplar hinzufügen?`)) return;
+    const copy = () => newCopy({ purchaseDate: $('#nDate').value || new Date().toISOString().slice(0, 10), price: priceLater ? null : price });
     let set = existing;
     if (!set) {
-      set = newSet({ number, name, wishlist: $('#nWish').checked });
-      if (!set.wishlist) set.copies.push(newCopy({ purchaseDate: new Date().toISOString().slice(0, 10) }));
+      set = newSet({ number, name, wishlist: wish });
+      if (!wish) set.copies.push(copy());
     } else {
-      set.copies.push(newCopy({ purchaseDate: new Date().toISOString().slice(0, 10) }));
+      set.copies.push(copy());
+      if (!wish) set.wishlist = false;
     }
     await data.save(set);
     location.hash = '#/set/' + set.id;
-    if (!existing && number) autoResearch(set.id);
+    if (!existing && number) await autoResearch(set.id);
+    if (photoFile) { await new Promise((r) => setTimeout(r, 50)); await processPhoto(data.get(set.id), photoFile); }
   };
+  $('#nCreate').onclick = () => create(false);
+  $('#nLater').onclick = () => create(true);
 }
 
 async function autoResearch(id, overwrite = false) {
@@ -331,6 +386,7 @@ function copyCard(s, c, i) {
   return `<div class="card copy">
     <div class="copy-head"><h3>Exemplar ${i + 1}</h3>
       ${c.soldDate || c.soldPrice !== null ? '<span class="badge">verkauft</span>' : ''}
+      ${c.price === null || c.price === undefined ? '<span class="badge warn">Preis fehlt</span>' : ''}
       <span class="spacer"></span><button class="btn small danger" data-delcopy="${c.id}">Löschen</button></div>
     <div class="grid">
       <label class="field"><span>Kaufdatum</span><input type="date" data-c="${c.id}" data-cf="purchaseDate" value="${esc(c.purchaseDate)}"></label>

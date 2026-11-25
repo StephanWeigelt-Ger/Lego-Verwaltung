@@ -1,9 +1,9 @@
 // Service Worker: macht die App offline nutzbar.
 // Eigene Dateien: zuerst aus dem Netz (damit Updates sofort ankommen), sonst aus dem Cache.
-const CACHE = 'lego-v11';
+const CACHE = 'lego-v12';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/store.js', 'js/data.js', 'js/dropbox.js', 'js/photo.js', 'js/research.js', 'js/importer.js', 'js/config.js', 'js/dropimport.js',
+  'js/app.js', 'js/store.js', 'js/data.js', 'js/dropbox.js', 'js/photo.js', 'js/research.js', 'js/importer.js', 'js/config.js', 'js/dropimport.js', 'js/scan.js',
   'vendor/xlsx.full.min.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png',
 ];
 
